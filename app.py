@@ -101,7 +101,9 @@ boton_buscar = st.sidebar.button("Buscar")
 
 if boton_buscar:
 
-    df_filtrado = df.copy()
+    with st.spinner("🔄 Procesando búsqueda..."):
+
+        df_filtrado = df.copy()
 
         # FILTRO FIJO: ACTOR PRIMER NIVEL = 'internacional'
         if "ACTOR PRIMER NIVEL" in df_filtrado.columns:
@@ -109,48 +111,50 @@ if boton_buscar:
                 df_filtrado["ACTOR PRIMER NIVEL"].astype(str).str.lower() == "internacional"
             ]
 
+        # PALABRAS CLAVE
+        if entrada.strip() != "":
+            palabras_clave = [normalizar_texto(p.strip()) for p in entrada.split(",")]
+            expresion = "|".join([re.escape(p) for p in palabras_clave])
+    
+            columnas_objetivo = ["NOMBRE INTERVENCION", "OBJETIVO GENERAL"]
+            filtro_texto = False
+    
+            for col in columnas_objetivo:
+                if col in df.columns:
+                    texto_col = df[col].astype(str).apply(normalizar_texto)
+                    if filtro_texto is False:
+                        filtro_texto = texto_col.str.contains(expresion, na=False)
+                    else:
+                        filtro_texto |= texto_col.str.contains(expresion, na=False)
+    
+            df_filtrado = df_filtrado[filtro_texto]
+    
+        # FILTROS GENERALES
+        def aplicar_filtro(columna, seleccion):
+            nonlocal_df = df_filtrado
+            if len(seleccion) > 0 and "Todos" not in seleccion:
+                nonlocal_df = nonlocal_df[nonlocal_df[columna].isin(seleccion)]
+            return nonlocal_df
+    
+        if len(anios) > 0 and "Todos" not in anios:
+            df_filtrado = df_filtrado[df_filtrado["FECHA INICIAL"].dt.year.isin(anios)]
+    
+        # RANGO FECHA FINAL
+        if fecha_final_rango and "FECHA FINAL" in df_filtrado.columns:
+            fecha_ini, fecha_fin = fecha_final_rango
+            df_filtrado = df_filtrado[(df_filtrado["FECHA FINAL"] >= pd.to_datetime(fecha_ini)) &
+                                      (df_filtrado["FECHA FINAL"] <= pd.to_datetime(fecha_fin))]
 
-    # PALABRAS CLAVE
-    if entrada.strip() != "":
-        palabras_clave = [normalizar_texto(p.strip()) for p in entrada.split(",")]
-        expresion = "|".join([re.escape(p) for p in palabras_clave])
-
-        columnas_objetivo = ["NOMBRE INTERVENCION", "OBJETIVO GENERAL"]
-        filtro_texto = False
-
-        for col in columnas_objetivo:
-            if col in df.columns:
-                texto_col = df[col].astype(str).apply(normalizar_texto)
-                if filtro_texto is False:
-                    filtro_texto = texto_col.str.contains(expresion, na=False)
-                else:
-                    filtro_texto |= texto_col.str.contains(expresion, na=False)
-
-        df_filtrado = df_filtrado[filtro_texto]
-
-    # FILTROS GENERALES
-    def aplicar_filtro(columna, seleccion):
-        nonlocal_df = df_filtrado
-        if len(seleccion) > 0 and "Todos" not in seleccion:
-            nonlocal_df = nonlocal_df[nonlocal_df[columna].isin(seleccion)]
-        return nonlocal_df
-
-    if len(anios) > 0 and "Todos" not in anios:
-        df_filtrado = df_filtrado[df_filtrado["FECHA INICIAL"].dt.year.isin(anios)]
-
-    # RANGO FECHA FINAL
-    if fecha_final_rango and "FECHA FINAL" in df_filtrado.columns:
-        fecha_ini, fecha_fin = fecha_final_rango
-        df_filtrado = df_filtrado[(df_filtrado["FECHA FINAL"] >= pd.to_datetime(fecha_ini)) &
-                                  (df_filtrado["FECHA FINAL"] <= pd.to_datetime(fecha_fin))]
-
-    df_filtrado = aplicar_filtro("DEPARTAMENTO", departamentos)
+        df_filtrado = aplicar_filtro("DEPARTAMENTO", departamentos)
         df_filtrado = aplicar_filtro("MUNICIPIO", municipios)
 
-        # FILTRO FIJO: solo proyectos con ACTOR PRIMER NIVEL = "internacional"
+        # FILTRO FIJO: solo proyectos internacionales
         if "ACTOR PRIMER NIVEL" in df_filtrado.columns:
             df_filtrado = df_filtrado[
-                df_filtrado["ACTOR PRIMER NIVEL"].astype(str).str.lower() == "internacional"
+                df_filtrado["ACTOR PRIMER NIVEL"]
+                .astype(str)
+                .str.lower()
+                .str.strip() == "internacional"
             ]
 
         df_filtrado = aplicar_filtro("ACTOR SEGUNDO NIVEL", actor_2)
@@ -159,11 +163,11 @@ if boton_buscar:
         df_filtrado = aplicar_filtro("ODS", ods)
         df_filtrado = aplicar_filtro("ESTADO DE INTERVENCION", estado_intervencion)
 
-    # FILTRO FIJO: solo proyectos internacionales
-    if "ORIGEN DEL ACTOR" in df_filtrado.columns:
-        df_filtrado = df_filtrado[df_filtrado["ORIGEN DEL ACTOR"].astype(str).str.lower() == "internacional"]
-
-    st.success(f"Registros encontrados: {len(df_filtrado)}")
+        # FILTRO FIJO: solo proyectos internacionales
+        if "ORIGEN DEL ACTOR" in df_filtrado.columns:
+            df_filtrado = df_filtrado[df_filtrado["ORIGEN DEL ACTOR"].astype(str).str.lower() == "internacional"]
+    
+        st.success(f"Registros encontrados: {len(df_filtrado)}")
 
     # =====================================
     # TABLA
@@ -282,6 +286,7 @@ if boton_buscar:
 
 else:
     st.info("Configura los filtros y presiona Buscar")
+
 
 
 
