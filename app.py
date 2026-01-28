@@ -85,7 +85,7 @@ def multiselect_columna(nombre_columna, label):
 # ACTOR PRIMER NIVEL eliminado del sidebar (se filtra fijo a 'internacional')
 actor_2 = multiselect_columna("ACTOR SEGUNDO NIVEL", "Actor segundo nivel")
 origen_actor = multiselect_columna("ORIGEN DEL ACTOR", "Origen del actor")
-nombre_actor = multiselect_columna("NOMBRE DEL ACTOR", "Nombre del actor")
+nombre_actor = multiselect_columna("NOMBRE ACTOR", "Nombre actor")
 ods = multiselect_columna("ODS", "ODS")
 estado_intervencion = multiselect_columna("ESTADO DE INTERVENCION", "Estado de intervención")
 
@@ -152,7 +152,7 @@ if boton_buscar:
     df_filtrado = aplicar_filtro("MUNICIPIO", municipios)
     df_filtrado = aplicar_filtro("ACTOR SEGUNDO NIVEL", actor_2)
     df_filtrado = aplicar_filtro("ORIGEN DEL ACTOR", origen_actor)
-    df_filtrado = aplicar_filtro("NOMBRE DEL ACTOR", nombre_actor)
+    df_filtrado = aplicar_filtro("NOMBRE ACTOR", nombre_actor)
     df_filtrado = aplicar_filtro("ODS", ods)
     df_filtrado = aplicar_filtro("ESTADO DE INTERVENCION", estado_intervencion)
 
@@ -273,6 +273,7 @@ if boton_buscar:
 
 else:
     st.info("Configura los filtros y presiona Buscar")
+
 
 
 
