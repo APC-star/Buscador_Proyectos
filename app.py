@@ -145,13 +145,19 @@ if boton_buscar:
                                   (df_filtrado["FECHA FINAL"] <= pd.to_datetime(fecha_fin))]
 
     df_filtrado = aplicar_filtro("DEPARTAMENTO", departamentos)
-    df_filtrado = aplicar_filtro("MUNICIPIO", municipios)
-    # df_filtrado = aplicar_filtro("ACTOR PRIMER NIVEL", actor_1)  # eliminado: filtro fijo aplicado arriba
-    df_filtrado = aplicar_filtro("ACTOR SEGUNDO NIVEL", actor_2)
-    df_filtrado = aplicar_filtro("ORIGEN DEL ACTOR", origen_actor)
-    df_filtrado = aplicar_filtro("NOMBRE DEL ACTOR", nombre_actor)
-    df_filtrado = aplicar_filtro("ODS", ods)
-    df_filtrado = aplicar_filtro("ESTADO DE INTERVENCION", estado_intervencion)
+        df_filtrado = aplicar_filtro("MUNICIPIO", municipios)
+
+        # FILTRO FIJO: solo proyectos con ACTOR PRIMER NIVEL = "internacional"
+        if "ACTOR PRIMER NIVEL" in df_filtrado.columns:
+            df_filtrado = df_filtrado[
+                df_filtrado["ACTOR PRIMER NIVEL"].astype(str).str.lower() == "internacional"
+            ]
+
+        df_filtrado = aplicar_filtro("ACTOR SEGUNDO NIVEL", actor_2)
+        df_filtrado = aplicar_filtro("ORIGEN DEL ACTOR", origen_actor)
+        df_filtrado = aplicar_filtro("NOMBRE ACTOR", nombre_actor)
+        df_filtrado = aplicar_filtro("ODS", ods)
+        df_filtrado = aplicar_filtro("ESTADO DE INTERVENCION", estado_intervencion)
 
     # FILTRO FIJO: solo proyectos internacionales
     if "ORIGEN DEL ACTOR" in df_filtrado.columns:
@@ -276,6 +282,7 @@ if boton_buscar:
 
 else:
     st.info("Configura los filtros y presiona Buscar")
+
 
 
 
