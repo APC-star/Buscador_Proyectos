@@ -55,21 +55,13 @@ entrada = st.sidebar.text_input("Palabras clave")
 lista_anios = sorted(df["FECHA INICIAL"].dropna().dt.year.unique().astype(int))
 anios = st.sidebar.multiselect("Años (fecha inicial)", ["Todos"] + lista_anios)
 
-# RANGO FECHA FINAL (inicia sin filtrar)
+# RANGO FECHA FINAL (inicia vacío)
 fecha_final_rango = None
 if "FECHA FINAL" in df.columns:
     st.sidebar.markdown("### Rango de fecha finalización")
-    
-    # Obtener fecha mínima y máxima del dataset
-    min_fecha = df["FECHA FINAL"].min()
-    max_fecha = df["FECHA FINAL"].max()
-    
-    # Mostrar date_input con rango completo como inicial
     fecha_final_rango = st.sidebar.date_input(
         "Selecciona rango",
-        value=(min_fecha, max_fecha),
-        min_value=min_fecha,
-        max_value=max_fecha
+        value=None
     )
 
 # DEPARTAMENTO
@@ -94,10 +86,10 @@ def multiselect_columna(nombre_columna, label):
         return st.sidebar.multiselect(label, ["Todos"] + valores)
     return []
 
-actor_1 = multiselect_columna("ACTOR PRIMER NIVEL", "Actor primer nivel")
+# actor_1 eliminado: filtro fijo aplicado en backend (solo 'internacional')
 actor_2 = multiselect_columna("ACTOR SEGUNDO NIVEL", "Actor segundo nivel")
 origen_actor = multiselect_columna("ORIGEN DEL ACTOR", "Origen del actor")
-nombre_actor = multiselect_columna("NOMBRE ACTOR", "Nombre actor")
+nombre_actor = multiselect_columna("NOMBRE DEL ACTOR", "Nombre del actor")
 ods = multiselect_columna("ODS", "ODS")
 estado_intervencion = multiselect_columna("ESTADO DE INTERVENCION", "Estado de intervención")
 
@@ -109,57 +101,63 @@ boton_buscar = st.sidebar.button("Buscar")
 
 if boton_buscar:
 
-    with st.spinner("🔄 Procesando búsqueda..."):
+    df_filtrado = df.copy()
 
-        df_filtrado = df.copy()
-
-        # PALABRAS CLAVE
-        if entrada.strip() != "":
-            palabras_clave = [normalizar_texto(p.strip()) for p in entrada.split(",")]
-            expresion = "|".join([re.escape(p) for p in palabras_clave])
-
-            columnas_objetivo = ["NOMBRE INTERVENCION", "OBJETIVO GENERAL"]
-            filtro_texto = False
-
-            for col in columnas_objetivo:
-                if col in df.columns:
-                    texto_col = df[col].astype(str).apply(normalizar_texto)
-                    if filtro_texto is False:
-                        filtro_texto = texto_col.str.contains(expresion, na=False)
-                    else:
-                        filtro_texto |= texto_col.str.contains(expresion, na=False)
-
-            df_filtrado = df_filtrado[filtro_texto]
-
-        # FILTROS GENERALES
-        def aplicar_filtro(columna, seleccion):
-            nonlocal_df = df_filtrado
-            if len(seleccion) > 0 and "Todos" not in seleccion:
-                nonlocal_df = nonlocal_df[nonlocal_df[columna].isin(seleccion)]
-            return nonlocal_df
-
-        if len(anios) > 0 and "Todos" not in anios:
-            df_filtrado = df_filtrado[df_filtrado["FECHA INICIAL"].dt.year.isin(anios)]
-
-        # RANGO FECHA FINAL
-        if fecha_final_rango and len(fecha_final_rango) == 2 and "FECHA FINAL" in df_filtrado.columns:
-            fecha_ini, fecha_fin = fecha_final_rango
+        # FILTRO FIJO: ACTOR PRIMER NIVEL = 'internacional'
+        if "ACTOR PRIMER NIVEL" in df_filtrado.columns:
             df_filtrado = df_filtrado[
-                (df_filtrado["FECHA FINAL"] >= pd.to_datetime(fecha_ini)) &
-                (df_filtrado["FECHA FINAL"] <= pd.to_datetime(fecha_fin))
+                df_filtrado["ACTOR PRIMER NIVEL"].astype(str).str.lower() == "internacional"
             ]
 
-        df_filtrado = aplicar_filtro("DEPARTAMENTO", departamentos)
-        df_filtrado = aplicar_filtro("MUNICIPIO", municipios)
-        df_filtrado = aplicar_filtro("ACTOR PRIMER NIVEL", actor_1)
-        df_filtrado = aplicar_filtro("ACTOR SEGUNDO NIVEL", actor_2)
-        df_filtrado = aplicar_filtro("ORIGEN DEL ACTOR", origen_actor)
-        df_filtrado = aplicar_filtro("NOMBRE ACTOR", nombre_actor)
-        df_filtrado = aplicar_filtro("ODS", ods)
-        df_filtrado = aplicar_filtro("ESTADO DE INTERVENCION", estado_intervencion)
 
-        # Mostrar número de registros dentro del spinner
-        st.success(f"Registros encontrados: {len(df_filtrado)}")
+    # PALABRAS CLAVE
+    if entrada.strip() != "":
+        palabras_clave = [normalizar_texto(p.strip()) for p in entrada.split(",")]
+        expresion = "|".join([re.escape(p) for p in palabras_clave])
+
+        columnas_objetivo = ["NOMBRE INTERVENCION", "OBJETIVO GENERAL"]
+        filtro_texto = False
+
+        for col in columnas_objetivo:
+            if col in df.columns:
+                texto_col = df[col].astype(str).apply(normalizar_texto)
+                if filtro_texto is False:
+                    filtro_texto = texto_col.str.contains(expresion, na=False)
+                else:
+                    filtro_texto |= texto_col.str.contains(expresion, na=False)
+
+        df_filtrado = df_filtrado[filtro_texto]
+
+    # FILTROS GENERALES
+    def aplicar_filtro(columna, seleccion):
+        nonlocal_df = df_filtrado
+        if len(seleccion) > 0 and "Todos" not in seleccion:
+            nonlocal_df = nonlocal_df[nonlocal_df[columna].isin(seleccion)]
+        return nonlocal_df
+
+    if len(anios) > 0 and "Todos" not in anios:
+        df_filtrado = df_filtrado[df_filtrado["FECHA INICIAL"].dt.year.isin(anios)]
+
+    # RANGO FECHA FINAL
+    if fecha_final_rango and "FECHA FINAL" in df_filtrado.columns:
+        fecha_ini, fecha_fin = fecha_final_rango
+        df_filtrado = df_filtrado[(df_filtrado["FECHA FINAL"] >= pd.to_datetime(fecha_ini)) &
+                                  (df_filtrado["FECHA FINAL"] <= pd.to_datetime(fecha_fin))]
+
+    df_filtrado = aplicar_filtro("DEPARTAMENTO", departamentos)
+    df_filtrado = aplicar_filtro("MUNICIPIO", municipios)
+    # df_filtrado = aplicar_filtro("ACTOR PRIMER NIVEL", actor_1)  # eliminado: filtro fijo aplicado arriba
+    df_filtrado = aplicar_filtro("ACTOR SEGUNDO NIVEL", actor_2)
+    df_filtrado = aplicar_filtro("ORIGEN DEL ACTOR", origen_actor)
+    df_filtrado = aplicar_filtro("NOMBRE DEL ACTOR", nombre_actor)
+    df_filtrado = aplicar_filtro("ODS", ods)
+    df_filtrado = aplicar_filtro("ESTADO DE INTERVENCION", estado_intervencion)
+
+    # FILTRO FIJO: solo proyectos internacionales
+    if "ORIGEN DEL ACTOR" in df_filtrado.columns:
+        df_filtrado = df_filtrado[df_filtrado["ORIGEN DEL ACTOR"].astype(str).str.lower() == "internacional"]
+
+    st.success(f"Registros encontrados: {len(df_filtrado)}")
 
     # =====================================
     # TABLA
@@ -225,6 +223,8 @@ if boton_buscar:
 
     st.subheader("Distribución de aportes (Top 10)")
 
+    st.subheader("Distribución de aportes (Top 10)")
+
     def grafica_barras(columna, titulo):
         if columna in df_filtrado.columns:
             datos = (
@@ -276,5 +276,6 @@ if boton_buscar:
 
 else:
     st.info("Configura los filtros y presiona Buscar")
+
 
 
