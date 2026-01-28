@@ -51,6 +51,8 @@ st.sidebar.header("Filtros de búsqueda")
 
 entrada = st.sidebar.text_input("Palabras clave")
 
+st.sidebar.caption("✏️ Escribe las palabras con buena ortografía y sepáralas por comas. Ejemplo: salud, educación, migración")
+
 # AÑOS (FECHA INICIAL)
 lista_anios = sorted(df["FECHA INICIAL"].dropna().dt.year.unique().astype(int))
 anios = st.sidebar.multiselect("Años (fecha inicial)", ["Todos"] + lista_anios)
@@ -282,6 +284,7 @@ if boton_buscar:
 
 else:
     st.info("Configura los filtros y presiona Buscar")
+
 
 
 
