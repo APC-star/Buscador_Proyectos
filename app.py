@@ -124,21 +124,28 @@ if boton_buscar:
             ]
         # PALABRAS CLAVE
         if entrada.strip() != "":
-            palabras_clave = [normalizar_texto(p.strip()) for p in entrada.split(",")]
-            expresion = "|".join([re.escape(p) for p in palabras_clave])
+            palabras_clave = [
+                normalizar_texto(p.strip())
+                for p in entrada.split(",")
+                if p.strip()
+            ]
 
-            columnas_objetivo = ["NOMBRE INTERVENCION", "OBJETIVO GENERAL"]
-            filtro_texto = False
+            if len(palabras_clave) > 0:
+                expresion = "|".join(re.escape(p) for p in palabras_clave)
 
-            for col in columnas_objetivo:
-                if col in df.columns:
-                    texto_col = df[col].astype(str).apply(normalizar_texto)
-                    if filtro_texto is False:
-                        filtro_texto = texto_col.str.contains(expresion, na=False)
-                    else:
-                        filtro_texto |= texto_col.str.contains(expresion, na=False)
+                columnas_objetivo = ["NOMBRE INTERVENCION", "OBJETIVO GENERAL"]
+                filtro_texto = False
 
-            df_filtrado = df_filtrado[filtro_texto]
+                for col in columnas_objetivo:
+                    if col in df_filtrado.columns:
+                        texto_col = df_filtrado[col].astype(str).apply(normalizar_texto)
+
+                        if filtro_texto is False:
+                            filtro_texto = texto_col.str.contains(expresion, na=False, regex=True)
+                        else:
+                            filtro_texto |= texto_col.str.contains(expresion, na=False, regex=True)
+
+                df_filtrado = df_filtrado[filtro_texto]
 
         # FILTROS GENERALES
         def aplicar_filtro(columna, seleccion):
