@@ -131,7 +131,7 @@ if boton_buscar:
             ]
 
             if len(palabras_clave) > 0:
-                expresion = "|".join(re.escape(p) for p in palabras_clave)
+                expresion = "|".join(rf"\b{re.escape(p)}\b" for p in palabras_clave)
 
                 columnas_objetivo = ["NOMBRE INTERVENCION", "OBJETIVO GENERAL"]
                 filtro_texto = False
@@ -291,6 +291,7 @@ if boton_buscar:
 
 else:
     st.info("Configura los filtros y presiona Buscar")
+
 
 
 
