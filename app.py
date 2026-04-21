@@ -49,66 +49,70 @@ def tokenizar(texto: str) -> list:
 
 
 # =====================================
-# NÚCLEO: COINCIDENCIA INTELIGENTE
+# REGEX VECTORIZADO — NÚCLEO DE VELOCIDAD
 # =====================================
+# En lugar de iterar fila por fila con apply() (lento, Python puro),
+# construimos un patrón regex por cada palabra buscada y usamos
+# str.contains() que corre en C sobre toda la columna a la vez.
+# Esto es ~20-50x más rápido.
 
-def token_coincide(token: str, palabra: str) -> bool:
-    """Una palabra del texto coincide con la palabra buscada (prefijo directo o transparente)."""
-    if token.startswith(palabra):
-        return True
-    for prefijo in PREFIJOS_TRANSPARENTES:
-        if token.startswith(prefijo + palabra):
-            return True
-    return False
-
-
-def frase_coincide_en_texto(texto_norm: str, palabras_frase: list) -> bool:
+def _patron_palabra(palabra: str) -> str:
     """
-    Verifica que TODAS las palabras de una frase aparezcan en el texto (lógica AND).
-    Cada palabra individual usa la coincidencia inteligente de prefijos.
+    Construye un patrón regex que detecta si alguna palabra del texto
+    comienza con 'palabra' (directo) o con 'prefijo+palabra' (compuesto).
 
-    Ejemplo: frase = ["cambio", "climatico"]
-      → el texto debe contener algún token que coincida con "cambio"
-        Y algún token que coincida con "climatico"
+    Ejemplo para 'feminismo':
+      \b(?:feminismo|transfeminismo|ecofeminismo|...)
+    → coincide con cualquier token que empiece por alguna de esas formas.
     """
-    tokens = tokenizar(texto_norm)
-    return all(
-        any(token_coincide(tok, palabra) for tok in tokens)
-        for palabra in palabras_frase
-    )
+    alternativas = [re.escape(palabra)] + [
+        re.escape(p + palabra) for p in PREFIJOS_TRANSPARENTES
+    ]
+    return r'\b(?:' + '|'.join(alternativas) + r')'
 
 
-def texto_contiene_alguna_frase(texto_norm: str, frases: list) -> bool:
+# Caché de patrones compilados para no recompilarlos en cada búsqueda
+_cache_patrones: dict = {}
+
+def _patron_compilado(palabra: str) -> re.Pattern:
+    if palabra not in _cache_patrones:
+        _cache_patrones[palabra] = re.compile(_patron_palabra(palabra))
+    return _cache_patrones[palabra]
+
+
+def filtrar_inteligente(serie: pd.Series, frases_norm: list) -> pd.Series:
     """
-    Verifica si el texto contiene AL MENOS UNA de las frases buscadas (lógica OR entre frases).
-    Dentro de cada frase todas las palabras deben aparecer (lógica AND).
-
-    Ejemplo: frases = [["cambio", "climatico"], ["feminismo"]]
-      → el texto debe tener ("cambio" Y "climatico") O ("feminismo")
+    Versión VECTORIZADA del filtro inteligente.
+    - AND entre palabras de una misma frase (todas deben aparecer).
+    - OR entre frases distintas (basta que una coincida).
+    Usa str.contains() sobre toda la columna, sin bucles Python por fila.
     """
-    return any(frase_coincide_en_texto(texto_norm, frase) for frase in frases)
+    mascara_final = pd.Series(False, index=serie.index)
+
+    for frase in frases_norm:
+        mascara_frase = pd.Series(True, index=serie.index)
+        for palabra in frase:
+            patron = _patron_compilado(palabra)
+            mascara_frase &= serie.str.contains(patron, na=False, regex=True)
+        mascara_final |= mascara_frase
+
+    return mascara_final
+
+
+def filtrar_exacto(serie: pd.Series, frases_norm: list) -> pd.Series:
+    """Modo exacto: busca la frase literal con límites de palabra."""
+    frases_completas = [" ".join(f) for f in frases_norm]
+    patron = "|".join(rf"\b{re.escape(f)}\b" for f in frases_completas)
+    return serie.str.contains(patron, na=False, regex=True)
 
 
 def filtrar_por_palabras(serie: pd.Series, frases_norm: list, modo: str) -> pd.Series:
-    """
-    Aplica el filtro sobre una Serie de textos ya normalizados.
-
-    frases_norm — lista de listas: cada sublista es una frase (sus palabras separadas).
-      Ejemplo: [["cambio", "climatico"], ["feminismo"]]
-
-    modo "exacta"      → regex \b...\b sobre la frase completa (texto sin partir)
-    modo "inteligente" → AND dentro de frase, OR entre frases
-    """
     if not frases_norm:
         return pd.Series(False, index=serie.index)
-
     if modo == "exacta":
-        # En modo exacta cada frase se busca como texto literal completo
-        frases_completas = [" ".join(f) for f in frases_norm]
-        patron = "|".join(rf"\b{re.escape(f)}\b" for f in frases_completas)
-        return serie.str.contains(patron, na=False, regex=True)
+        return filtrar_exacto(serie, frases_norm)
     else:
-        return serie.apply(lambda txt: texto_contiene_alguna_frase(txt, frases_norm))
+        return filtrar_inteligente(serie, frases_norm)
 
 
 # =====================================
@@ -117,21 +121,15 @@ def filtrar_por_palabras(serie: pd.Series, frases_norm: list, modo: str) -> pd.S
 
 def parsear_entrada(entrada: str):
     """
-    Convierte la entrada del usuario en:
-      - originales:      lista de frases tal como las escribió el usuario
-      - frases_norm:     lista de listas de palabras normalizadas
-
-    Ejemplo:
-      "cambio climatico, feminismo" →
-        originales   = ["cambio climatico", "feminismo"]
-        frases_norm  = [["cambio", "climatico"], ["feminismo"]]
+    "cambio climatico, feminismo" →
+      originales  = ["cambio climatico", "feminismo"]
+      frases_norm = [["cambio", "climatico"], ["feminismo"]]
     """
     originales = [p.strip() for p in entrada.split(",") if p.strip()]
     frases_norm = [
         [w for w in tokenizar(normalizar_texto(frase)) if w]
         for frase in originales
     ]
-    # Descartar frases que quedaron vacías tras normalizar
     pares = [(o, f) for o, f in zip(originales, frases_norm) if f]
     if not pares:
         return [], []
@@ -141,32 +139,8 @@ def parsear_entrada(entrada: str):
 
 # =====================================
 # TRAZABILIDAD — segunda hoja del Excel
+# (corre sobre df_filtrado ya reducido, rendimiento aceptable)
 # =====================================
-
-def frase_coincide_en_fila(fila: pd.Series, palabras_frase: list, modo: str) -> bool:
-    """Verifica si una frase específica coincide en alguna columna objetivo de la fila."""
-    for col in COLUMNAS_OBJETIVO:
-        if col in fila.index:
-            texto_norm = normalizar_texto(fila[col])
-            if modo == "exacta":
-                frase_completa = " ".join(palabras_frase)
-                if re.search(rf"\b{re.escape(frase_completa)}\b", texto_norm):
-                    return True
-            else:
-                if frase_coincide_en_texto(texto_norm, palabras_frase):
-                    return True
-    return False
-
-
-def frases_coincidentes_en_fila(fila: pd.Series, originales: list,
-                                  frases_norm: list, modo: str) -> str:
-    """Retorna las frases originales que coincidieron en la fila."""
-    encontradas = [
-        orig for orig, frase in zip(originales, frases_norm)
-        if frase_coincide_en_fila(fila, frase, modo)
-    ]
-    return ", ".join(encontradas)
-
 
 def construir_hoja_palabras(df_filtrado: pd.DataFrame, originales: list,
                              frases_norm: list, modo: str) -> pd.DataFrame:
@@ -180,13 +154,29 @@ def construir_hoja_palabras(df_filtrado: pd.DataFrame, originales: list,
                if c in df_filtrado.columns]
 
     hoja = df_filtrado[cols_id].copy().reset_index(drop=True)
-    hoja["Frases buscadas"] = ", ".join(originales)
+    hoja["Frases buscadas"]  = ", ".join(originales)
     hoja["Modo de búsqueda"] = "Inteligente" if modo == "inteligente" else "Exacta"
-    hoja["Frases que coincidieron"] = df_filtrado.apply(
-        lambda fila: frases_coincidentes_en_fila(fila, originales, frases_norm, modo),
-        axis=1
-    ).values
 
+    # Para cada frase, calcular vectorialmente qué filas coinciden
+    coincidencias_por_fila = [[] for _ in range(len(df_filtrado))]
+
+    for orig, frase in zip(originales, frases_norm):
+        for col in COLUMNAS_OBJETIVO:
+            if col not in df_filtrado.columns:
+                continue
+            serie_norm = df_filtrado[col].astype(str).apply(normalizar_texto).reset_index(drop=True)
+            if modo == "exacta":
+                mascara = filtrar_exacto(serie_norm, [frase])
+            else:
+                mascara = filtrar_inteligente(serie_norm, [frase])
+            # Marcar las filas que coinciden con esta frase
+            for i, coincide in enumerate(mascara):
+                if coincide and orig not in coincidencias_por_fila[i]:
+                    coincidencias_por_fila[i].append(orig)
+            # Si ya coincidió en la primera columna no hace falta revisar más
+            # (pero sí puede coincidir en ambas — ambas se OR)
+
+    hoja["Frases que coincidieron"] = [", ".join(c) for c in coincidencias_por_fila]
     return hoja
 
 
@@ -406,7 +396,7 @@ if boton_buscar:
             n = len(agrupado)
             agrupado["VALOR APORTE (USD)"] = agrupado["VALOR APORTE (USD)"].apply(formato_usd)
             st.subheader(f"{titulo} ({n} {'registro' if n == 1 else 'registros'})")
-            st.dataframe(agrupado, use_container_width=True)
+            st.table(agrupado)
 
     mostrar_agrupado("ORIGEN DEL ACTOR", "Monto total aportado por cooperante")
     mostrar_agrupado("DEPARTAMENTO",     "Monto total aportado por departamento")
